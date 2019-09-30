@@ -99,8 +99,8 @@ pub(crate) struct AuthoritySet<H, N> {
 }
 
 impl<H, N> AuthoritySet<H, N>
-where H: PartialEq,
-	  N: Ord,
+where H: PartialEq + Debug,
+	  N: Ord + Debug,
 {
 	/// Get a genesis set with given authorities.
 	pub(crate) fn genesis(initial: Vec<(AuthorityId, u64)>) -> Self {

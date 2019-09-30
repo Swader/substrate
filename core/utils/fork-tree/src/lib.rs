@@ -82,8 +82,8 @@ pub struct ForkTree<H, N, V> {
 }
 
 impl<H, N, V> ForkTree<H, N, V> where
-	H: PartialEq + Clone,
-	N: Ord + Clone,
+	H: PartialEq + Clone + std::fmt::Debug,
+	N: Ord + Clone + std::fmt::Debug,
 	V: Clone,
 {
 	/// Prune all nodes that are not descendents of `hash` according to
@@ -138,8 +138,8 @@ impl<H, N, V> ForkTree<H, N, V> where
 }
 
 impl<H, N, V> ForkTree<H, N, V> where
-	H: PartialEq,
-	N: Ord,
+	H: PartialEq + std::fmt::Debug,
+	N: Ord + std::fmt::Debug,
 {
 	/// Create a new empty tree.
 	pub fn new() -> ForkTree<H, N, V> {
@@ -531,7 +531,7 @@ mod node_implementation {
 		pub children: Vec<Node<H, N, V>>,
 	}
 
-	impl<H: PartialEq, N: Ord, V> Node<H, N, V> {
+	impl<H: PartialEq + std::fmt::Debug, N: Ord + std::fmt::Debug, V> Node<H, N, V> {
 		pub fn import<F, E: std::error::Error>(
 			&mut self,
 			mut hash: H,
@@ -620,7 +620,14 @@ mod node_implementation {
 			// searching for is a descendent of this node then we will stop the
 			// search here, since there aren't any more children and we found
 			// the correct node so we don't want to backtrack.
-			let is_descendent_of = known_descendent_of || is_descendent_of(&self.hash, hash)?;
+
+			println!("is_descendent_of: ({:?}, #{:?}), ({:?}, #{:?}), known_descendent_of: {}", self.hash, self.number, hash, number, known_descendent_of);
+			let is_descendent_of = known_descendent_of || {
+				let now = std::time::Instant::now();
+				let res = is_descendent_of(&self.hash, hash)?;
+				println!("is_descendent_of (time taken): {}", now.elapsed().as_millis());
+				res
+			};
 			if is_descendent_of {
 				// if the predicate passes we return the node
 				if predicate(&self.data) {

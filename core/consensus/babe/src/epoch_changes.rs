@@ -128,7 +128,7 @@ impl ViableEpoch {
 
 /// The datatype encoded on disk.
 // This really shouldn't be public, but the encode/decode derives force it to be.
-#[derive(Clone, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub enum PersistedEpoch {
 	// epoch_0, epoch_1,
 	Genesis(Epoch, Epoch),
@@ -181,8 +181,8 @@ fn fake_head_hash<H: AsRef<[u8]> + AsMut<[u8]> + Clone>(parent_hash: &H) -> H {
 }
 
 impl<Hash, Number> EpochChanges<Hash, Number> where
-	Hash: PartialEq + AsRef<[u8]> + AsMut<[u8]> + Copy,
-	Number: Ord + One + Zero + Add<Output=Number> + Copy,
+	Hash: PartialEq + AsRef<[u8]> + AsMut<[u8]> + Copy + std::fmt::Debug,
+	Number: Ord + One + Zero + Add<Output=Number> + Copy + std::fmt::Debug,
 {
 	/// Create a new epoch-change tracker.
 	fn new() -> Self {
@@ -250,6 +250,21 @@ impl<Hash, Number> EpochChanges<Hash, Number> where
 			PersistedEpoch::Regular(ref epoch_n) =>
 				epoch_n.start_slot <= slot_number,
 		};
+
+		println!("epoch_changes:");
+		let mut last = None;
+		for (h, n, _) in self.inner.iter() {
+			if let Some(last) = last {
+				if n <= last {
+					println!();
+				}
+			}
+
+			last = Some(n);
+
+			print!("-> {:?}", (h, n));
+		}
+		println!();
 
 		self.inner.find_node_where(
 			&fake_head_hash,
