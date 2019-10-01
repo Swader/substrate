@@ -195,15 +195,29 @@ impl<Hash, Number> EpochChanges<Hash, Number> where
 		descendent_of_builder: D,
 		hash: &Hash,
 		number: Number,
+		slot: SlotNumber,
 	) -> Result<(), fork_tree::Error<D::Error>> {
 		let is_descendent_of = descendent_of_builder
 			.build_is_descendent_of(None);
+
+
+		let predicate = |epoch: &PersistedEpoch| match *epoch {
+			PersistedEpoch::Genesis(_, ref epoch_1) =>
+				slot >= epoch_1.end_slot(),
+			PersistedEpoch::Regular(ref epoch_n) =>
+				slot >= epoch_n.end_slot(),
+		};
 
 		// prune any epochs which could not be _live_ as of the children of the
 		// finalized block. we find the oldest descendent of the finalized block
 		// in the tree (which may be a node for an epoch which is not live yet),
 		// and then we re-root the tree to its grandparent (`keep_last_n = 2`).
-		self.inner.prune(hash, &number, &is_descendent_of, 3)?;
+		self.inner.prune(
+			hash,
+			&number,
+			&is_descendent_of,
+			&predicate,
+		)?;
 
 		Ok(())
 	}

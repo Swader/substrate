@@ -269,6 +269,7 @@ pub fn start_babe<B, C, SC, E, I, SO, Error>(BabeParams {
 				descendent_query(&*client),
 				&notification.hash,
 				*notification.header.number(),
+				0,
 			);
 
 			if let Err(e) = res {
@@ -1297,10 +1298,18 @@ impl<B, E, Block, I, RA, PRA> BlockImport<Block> for BabeBlockImport<B, E, Block
 				println!("-----------------------------------------");
 				println!("epoch_changes.prune_finalized: {}", info.finalized_number);
 				println!("epoch_changes (before): {:?}", epoch_changes.inner.iter().map(|(h, n, _)| (h, n)).collect::<Vec<_>>());
+
+				let finalized_slot = {
+					let finalized_header = self.client.header(&BlockId::Hash(info.finalized_hash)).unwrap().unwrap();
+					let pre_digest = find_pre_digest::<Block>(&finalized_header).unwrap();
+					pre_digest.slot_number()
+				};
+
 				epoch_changes.prune_finalized(
 					descendent_query(&*self.client),
 					&info.finalized_hash,
 					info.finalized_number,
+					finalized_slot,
 				)?;
 				println!("epoch_changes (after): {:?}", epoch_changes.inner.iter().map(|(h, n, _)| (h, n)).collect::<Vec<_>>());
 
@@ -1408,10 +1417,16 @@ pub fn block_import<B, E, Block: BlockT<Hash=H256>, I, RA, PRA>(
 
 	// cleanup on startup
 	let info = client.info().chain;
+	let finalized_slot = {
+		let finalized_header = client.header(&BlockId::Hash(info.finalized_hash)).unwrap().unwrap();
+		let pre_digest = find_pre_digest::<Block>(&finalized_header).unwrap();
+		pre_digest.slot_number()
+	};
 	epoch_changes.lock().prune_finalized(
 		descendent_query(&*client),
 		&info.finalized_hash,
 		info.finalized_number,
+		finalized_slot,
 	).map_err(|e| ConsensusError::Other(Box::new(e)))?;
 
 	let link = BabeLink {

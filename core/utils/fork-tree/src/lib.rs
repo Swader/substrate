@@ -92,21 +92,22 @@ impl<H, N, V> ForkTree<H, N, V> where
 	/// (base). After pruning the tree it should have one or zero roots. The
 	/// number and order of calls to `is_descendent_of` is unspecified and
 	/// subject to change.
-	pub fn prune<F, E>(
+	pub fn prune<F, E, P>(
 		&mut self,
 		hash: &H,
 		number: &N,
 		is_descendent_of: &F,
-		keep_last_n: usize,
+		predicate: &P,
 	) -> Result<(), Error<E>>
 		where E: std::error::Error,
-			  F: Fn(&H, &H) -> Result<bool, E>
+			  F: Fn(&H, &H) -> Result<bool, E>,
+			  P: Fn(&V) -> bool,
 	{
 		let root = self.find_node_where(
 			hash,
 			number,
 			is_descendent_of,
-			&|_| true,
+			predicate,
 		)?;
 
 		if let Some(root) = root {
