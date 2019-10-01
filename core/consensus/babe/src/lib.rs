@@ -1401,9 +1401,19 @@ pub fn block_import<B, E, Block: BlockT<Hash=H256>, I, RA, PRA>(
 	api: Arc<PRA>,
 ) -> ClientResult<(BabeBlockImport<B, E, Block, I, RA, PRA>, BabeLink<Block>)> where
 	B: Backend<Block, Blake2Hasher>,
-	E: CallExecutor<Block, Blake2Hasher>,
+	E: CallExecutor<Block, Blake2Hasher> + Send + Sync,
+	RA: Send + Sync,
 {
 	let epoch_changes = aux_schema::load_epoch_changes(&*client)?;
+
+	// cleanup on startup
+	let info = client.info().chain;
+	epoch_changes.lock().prune_finalized(
+		descendent_query(&*client),
+		&info.finalized_hash,
+		info.finalized_number,
+	).map_err(|e| ConsensusError::Other(Box::new(e)))?;
+
 	let link = BabeLink {
 		epoch_changes: epoch_changes.clone(),
 		time_source: Default::default(),
