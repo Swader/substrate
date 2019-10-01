@@ -95,42 +95,98 @@ impl<H, N, V> ForkTree<H, N, V> where
 	pub fn prune<F, E>(
 		&mut self,
 		hash: &H,
-		number: N,
-		is_descendent_of: &F
+		number: &N,
+		is_descendent_of: &F,
+		keep_last_n: usize,
 	) -> Result<(), Error<E>>
 		where E: std::error::Error,
 			  F: Fn(&H, &H) -> Result<bool, E>
 	{
-		let mut new_root = None;
-		for node in self.node_iter() {
-			// if the node has a lower number than the one being finalized then
-			// we only keep if it has no children and the finalized block is a
-			// descendent of this node
-			if node.number < number  {
-				if !node.children.is_empty() || !is_descendent_of(&node.hash, hash)? {
-					continue;
-				}
-			}
+		let root = self.find_node_where(
+			hash,
+			number,
+			is_descendent_of,
+			&|_| true,
+		)?;
 
-			// if the node has the same number as the finalized block then it
-			// must have the same hash
-			if node.number == number && node.hash != *hash {
-				continue;
-			}
-
-			// if the node has a higher number then we keep it if it is a
-			// descendent of the finalized block
-			if node.number > number && !is_descendent_of(hash, &node.hash)? {
-				continue;
-			}
-
-			new_root = Some(node);
-			break;
-		}
-
-		if let Some(root) = new_root {
+		if let Some(root) = root {
 			self.roots = vec![root.clone()];
 		}
+
+		// let mut new_root_path = None;
+		// let mut current_path: Vec<&Node<H, N, V>> = Vec::new();
+
+		// // we iterate the tree in pre-order
+		// for node in self.node_iter() {
+		// 	// clean up current path when we backtrack
+		// 	loop {
+		// 		if let Some(last) = current_path.last() {
+		// 			if last.number >= node.number {
+		// 				current_path.pop();
+		// 				continue;
+		// 			}
+		// 		}
+
+		// 		break;
+		// 	}
+
+		// 	// add the node to the current path
+		// 	current_path.push(node);
+
+		// 	// if the node has a lower number than the one being finalized then
+		// 	// we only keep if it has no children and the finalized block is a
+		// 	// descendent of this node
+		// 	if node.number < number  {
+		// 		if !node.children.is_empty() || !is_descendent_of(&node.hash, hash)? {
+		// 			continue;
+		// 		}
+		// 	}
+
+		// 	// if the node has the same number as the finalized block then it
+		// 	// must have the same hash
+		// 	if node.number == number && node.hash != *hash {
+		// 		continue;
+		// 	}
+
+		// 	// if the node has a higher number then we keep it if it is a
+		// 	// descendent of the finalized block
+		// 	if node.number > number && !is_descendent_of(hash, &node.hash)? {
+		// 		continue;
+		// 	}
+
+		// 	// the vector has at least one element which was added in this
+		// 	// iteration.
+		// 	let index = current_path.len().saturating_sub(keep_last_n + 1);
+		// 	new_root_path = Some(&current_path[index..]);
+
+		// 	break;
+		// }
+
+		// if let Some(path) = new_root_path {
+		// 	// we have a path of length at most `keep_last_n` to the node that
+		// 	// was finalized. the first node in the path is the new root, and
+		// 	// we know that the path is non-empty.
+		// 	// let mut root = path[0].clone();
+		// 	// path always has at least one element
+		// 	let found_node = path.last().expect("if path is defined it is always non-empty; qed");
+		// 	if path.len() > 1 {
+		// 		self.roots = path[path.len() - 2].children.clone();
+		// 	}
+
+		// 	// TODO: filter roots
+
+		// 	// we need to remove all non-canonical children from the new-root to
+		// 	// the finalized node.
+		// 	// let mut current = &mut root;
+
+		// 	// for descendent in &path[1..] {
+		// 	// 	current.children.retain(|n| descendent.hash == n.hash);
+		// 	// 	current = &mut current.children[0];
+		// 	// }
+
+		// 	// set the new root
+			// self.roots = roots;
+		// }
 
 		Ok(())
 	}
@@ -203,6 +259,10 @@ impl<H, N, V> ForkTree<H, N, V> where
 
 	fn node_iter(&self) -> impl Iterator<Item=&Node<H, N, V>> {
 		ForkTreeIterator { stack: self.roots.iter().collect() }
+	}
+
+	fn node_level_iter(&self) -> impl Iterator<Item=&Node<H, N, V>> {
+		ForkTreeLevelIterator { queue: self.roots.iter().collect() }
 	}
 
 	/// Iterates the nodes in the tree in pre-order.
@@ -655,6 +715,21 @@ impl<'a, H, N, V> Iterator for ForkTreeIterator<'a, H, N, V> {
 	fn next(&mut self) -> Option<Self::Item> {
 		self.stack.pop().map(|node| {
 			self.stack.extend(node.children.iter());
+			node
+		})
+	}
+}
+
+struct ForkTreeLevelIterator<'a, H, N, V> {
+	queue: std::collections::VecDeque<&'a Node<H, N, V>>,
+}
+
+impl<'a, H, N, V> Iterator for ForkTreeLevelIterator<'a, H, N, V> {
+	type Item = &'a Node<H, N, V>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.queue.pop_front().map(|node| {
+			self.queue.extend(node.children.iter());
 			node
 		})
 	}
@@ -1210,8 +1285,9 @@ mod test {
 
 		tree.prune(
 			&"C",
-			3,
+			&3,
 			&is_descendent_of,
+			0,
 		).unwrap();
 
 		assert_eq!(

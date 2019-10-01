@@ -1280,6 +1280,8 @@ impl<B, E, Block, I, RA, PRA> BlockImport<Block> for BabeBlockImport<B, E, Block
 		// this way we can revert it if there's any error
 		let mut old_epoch_changes = None;
 
+		let info = self.client.info().chain;
+
 		if let Some(next_epoch_descriptor) = next_epoch_digest {
 			let next_epoch = epoch.increment(next_epoch_descriptor);
 
@@ -1289,17 +1291,31 @@ impl<B, E, Block, I, RA, PRA> BlockImport<Block> for BabeBlockImport<B, E, Block
 				epoch.as_ref().epoch_index, hash, slot_number, epoch.as_ref().start_slot);
 			babe_info!("Next epoch starts at slot {}", next_epoch.as_ref().start_slot);
 
-			// track the epoch change in the fork tree
-			let res = epoch_changes.import(
-				descendent_query(&*self.client),
-				hash,
-				number,
-				*block.header.parent_hash(),
-				next_epoch,
-			);
+			// track the epoch change in the fork tree and prune it according to
+			// the last finalized block.
+			let prune_and_import = || -> Result<(), fork_tree::Error<client::error::Error>> {
+				println!("-----------------------------------------");
+				println!("epoch_changes.prune_finalized: {}", info.finalized_number);
+				println!("epoch_changes (before): {:?}", epoch_changes.inner.iter().map(|(h, n, _)| (h, n)).collect::<Vec<_>>());
+				epoch_changes.prune_finalized(
+					descendent_query(&*self.client),
+					&info.finalized_hash,
+					info.finalized_number,
+				)?;
+				println!("epoch_changes (after): {:?}", epoch_changes.inner.iter().map(|(h, n, _)| (h, n)).collect::<Vec<_>>());
 
+				epoch_changes.import(
+					descendent_query(&*self.client),
+					hash,
+					number,
+					*block.header.parent_hash(),
+					next_epoch,
+				)?;
 
-			if let Err(e) = res {
+				Ok(())
+			};
+
+			if let Err(e) = prune_and_import() {
 				let err = ConsensusError::ClientImport(format!("{:?}", e));
 				babe_err!("Failed to launch next epoch: {:?}", e);
 				*epoch_changes = old_epoch_changes.expect("set `Some` above and not taken; qed");
@@ -1327,7 +1343,6 @@ impl<B, E, Block, I, RA, PRA> BlockImport<Block> for BabeBlockImport<B, E, Block
 		// chain.
 		block.fork_choice = {
 			let (last_best, last_best_number) = {
-				let info = self.client.info().chain;
 				(info.best_hash, info.best_number)
 			};
 

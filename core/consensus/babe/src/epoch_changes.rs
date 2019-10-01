@@ -128,7 +128,7 @@ impl ViableEpoch {
 
 /// The datatype encoded on disk.
 // This really shouldn't be public, but the encode/decode derives force it to be.
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Encode, Decode, Debug)]
 pub enum PersistedEpoch {
 	// epoch_0, epoch_1,
 	Genesis(Epoch, Epoch),
@@ -166,9 +166,9 @@ impl AsRef<Epoch> for IncrementedEpoch {
 /// same DAG entry, pinned to a specific block #1.
 ///
 /// Further epochs (epoch_2, ..., epoch_n) each get their own entry.
-#[derive(Clone, Encode, Decode)]
-pub struct EpochChanges<Hash, Number> {
-	inner: ForkTree<Hash, Number, PersistedEpoch>,
+#[derive(Clone, Encode, Debug, Decode)]
+pub struct EpochChanges<Hash: std::fmt::Debug, Number: std::fmt::Debug> {
+	pub inner: ForkTree<Hash, Number, PersistedEpoch>,
 }
 
 // create a fake header hash which hasn't been included in the chain.
@@ -193,19 +193,17 @@ impl<Hash, Number> EpochChanges<Hash, Number> where
 	pub fn prune_finalized<D: IsDescendentOfBuilder<Hash>>(
 		&mut self,
 		descendent_of_builder: D,
-		_hash: &Hash,
-		_number: Number,
+		hash: &Hash,
+		number: Number,
 	) -> Result<(), fork_tree::Error<D::Error>> {
-		let _is_descendent_of = descendent_of_builder
+		let is_descendent_of = descendent_of_builder
 			.build_is_descendent_of(None);
 
-		// TODO:
-		// https://github.com/paritytech/substrate/issues/3651
-		//
 		// prune any epochs which could not be _live_ as of the children of the
-		// finalized block.
-		// i.e. re-root the fork tree to the oldest ancestor of (hash, number)
-		// where epoch.end_slot() >= slot(hash)
+		// finalized block. we find the oldest descendent of the finalized block
+		// in the tree (which may be a node for an epoch which is not live yet),
+		// and then we re-root the tree to its grandparent (`keep_last_n = 2`).
+		self.inner.prune(hash, &number, &is_descendent_of, 3)?;
 
 		Ok(())
 	}
